@@ -38,6 +38,7 @@ entries 메소드는 2차원 배열로 바꿔줌, 그걸 비구조화 할당을 
   }
 
  */
+
 const crawler = async () => {
 
   add_to_sheet(ws,'C1', 's', '평점') // 시트에 쓰기
