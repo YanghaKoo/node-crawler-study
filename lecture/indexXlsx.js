@@ -13,6 +13,7 @@ const xlsx = require("xlsx");
 const axios = require("axios");
 const cheerio = require("cheerio"); // html 파싱
 const add_to_sheet = require("./add_to_sheet");
+const fs = require("fs");
 const puppeteer = require("puppeteer");
 
 const workbook = xlsx.readFile("xlsx/data.xlsx"); // readfile로 엑셀 파일을 읽어와
@@ -24,19 +25,19 @@ const records = xlsx.utils.sheet_to_json(ws); // 이걸로 복잡한 엑셀을 j
 // const records = xlsx.utils.sheet_to_json(ws, {header : "A"}); // 이렇게 하면 첫줄이 아닌 r.A,r.B,r.C...로 파싱됨
 console.log(records); // 객체로 저장되어 있음
 
-/*
-records.forEach((r,i)=>{
-  console.log(i, r.제목, r.링크)
-})
-
-entries 메소드는 2차원 배열로 바꿔줌, 그걸 비구조화 할당을 해서 돌리는 것
-위의 foreach문과 완전히 같음
-
-  for(const [i,r] of records.entries()){
-    console.log(i, r.제목, r.링크)
+fs.readdir("poster", err => {
+  if (err) {
+    // 에러가 있으면 폴더가 없단 뜻이지
+    fs.mkdirSync("poster"); // poster라는 디렉토리를 만들어줌
   }
+});
 
- */
+fs.readdir("screenshot", err => {
+  if (err) {
+    // 에러가 있으면 폴더가 없단 뜻이지
+    fs.mkdirSync("screenshot"); // poster라는 디렉토리를 만들어줌
+  }
+});
 
 const crawlerCherrio = async () => {
   add_to_sheet(ws, "C1", "s", "평점"); // 시트에 쓰기
@@ -75,8 +76,18 @@ const crawlerCherrio = async () => {
 
 const crawlerPuppeter = async () => {
   try {
-    const browser = await puppeteer.launch({ headless: false });
+    const browser = await puppeteer.launch({
+      headless: process.env.NODE_ENV === "production",
+      args: ["--window-size=1920,1080"]
+    });
     const page = await browser.newPage();
+
+    // 화면(탭)크기를 키우는 매소드
+    await page.setViewport({
+      width: 1920,
+      height: 1080
+    });
+
     await page.setUserAgent(
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/72.0.3626.109 Safari/537.36"
     ); // 유저에이전트, 크롬 f12에 navigator.userAgent 치고 복사해서 가져와, 유저에이전트를 설정해서 봇 아닌척 하는거임
@@ -84,23 +95,60 @@ const crawlerPuppeter = async () => {
     add_to_sheet(ws, "C1", "s", "평점"); // 엑셀에 쓴느 방법, 제목에 평점 적은거임 지금
     for (const [i, r] of records.entries()) {
       await page.goto(r.링크);
-      const text = await page.evaluate(() => {
-        const score = document.querySelector(".score.score_left .star_score");
-        if (score) {
-          return score.textContent;
+      const result = await page.evaluate(() => {
+        const scoreEl = document.querySelector(".score.score_left .star_score");
+        let score = "";
+        if (scoreEl) {
+          score = scoreEl.textContent;
         }
+        const imgEl = document.querySelector(".poster img"); // 포스터를 가져와야지
+        let img = "";
+        if (imgEl) {
+          img = imgEl.src;
+        }
+        return { score, img };
       });
-      
-      if (text) {
-        console.log(r.제목, "평점", text.trim());
+
+      if (result.score) {
+        console.log(r.제목, "평점", result.score.trim());
         const newCell = "C" + (i + 2);
-        add_to_sheet(ws, newCell, "n", text.trim());
+        add_to_sheet(ws, newCell, "n", result.score.trim());
       }
+
+      if (result.img) {
+        // 페이지 스크린샷 찍어서 해당 경로에 저장하기
+        await page.screenshot({
+          path: `screenshot/${r.제목}.png`,
+          fullPage: true,
+          /*
+            clip 옵션은 좌표를 이용하여 원하는 부분만 캡쳐하는 유용한 기능임
+            좌측 위 시작좌표와, width, heigth를 입력해주는 것임
+            clip과 fullPage는 둘중에 하나만 쓸 수 있음
+          */
+          /*
+            clip: {
+              x : 100,
+              y : 100,
+              width : 300,
+              height : 300
+            }
+           */
+        });
+
+        // ** 중요필기!!!
+        // 이미지 파일 읽어와서 파일 저장해오는 것 이렇게 하는거 외워라 --> axios + {responseType : 'arraybuffer'}로 해서 받아온 후 writeFileSync로 쓰면 됨
+        const imageResult = await axios.get(result.img.replace(/\?.*$/, ""), {
+          responseType: "arraybuffer"
+        });
+        fs.writeFileSync(`poster/${r.제목}.jpg`, imageResult.data);
+      }
+
       await page.waitFor(1000);
     }
-    await page.close()
-    await browser.close()
-    xlsx.writeFile(workbook, 'xlsx/result.xlsx')
+
+    await page.close();
+    await browser.close();
+    xlsx.writeFile(workbook, "xlsx/result.xlsx");
   } catch (e) {
     console.log(e);
   }
