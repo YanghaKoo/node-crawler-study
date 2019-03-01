@@ -55,7 +55,6 @@ const crawler = async () => {
       fs.writeFileSync(`imgs/${new Date().valueOf()}.jpeg`, imgResult.data)
     })
 
-
     await page.close()
     await browser.close()
   } catch (e) {
