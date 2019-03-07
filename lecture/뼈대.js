@@ -4,7 +4,7 @@ const puppeteer = require('puppeteer')
 // 페이스북보다 로그인 시키고 상호작용 하는 예제임
 const crawler = async () => {
   try{
-    const browser = await puppeteer.launch({headless : false, args : ['--window-size=1920,1080']})
+    const browser = await puppeteer.launch({headless : false, args : ['--window-size=1920,1080', '--disable-notifications']})
     const page = await browser.newPage()
     await page.setViewport({
       width : 1080,
